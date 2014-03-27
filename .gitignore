@@ -1,0 +1,16 @@
+*.o
+*.swn
+*.out
+*.hi
+*.iml
+out
+gen
+*.iws
+workspace.xml
+*.un~
+tasks.xml
+.*.swp
+.swp
+.swo
+.*.swo
+*.vim
