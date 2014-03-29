@@ -1,4 +1,5 @@
 #include "sys/types.h"
+#include "limits.h"
 #include "sys/stat.h"
 #include "unistd.h"
 #include "stdlib.h"
@@ -7,26 +8,30 @@
 #include "fcntl.h"
 
 int main(int argc, char **argv) {
-    char *prog_name = argv[1];
-    int fd[argc - 2];
-    for (int i = 0; i < argc - 2; ++i) {
-        char *filepath = argv[i + 2];
+    char *delimeter = argv[1];
+    char *prog_name = argv[2];
+    int fd_count = argc - 3;
+    int fd[fd_count];
+    char ** files = argv + argc - fd_count;
+    for (int i = 0; i < fd_count; ++i) {
+        char *filepath = files[i];
         fd[i] = open(filepath, O_RDONLY);
         if (fd[i] < 0) {
-            char err[255];
+            char err[255 + PATH_MAX];
             sprintf(err, "Openning file %s", filepath);
             perror(err);
             return EXIT_FAILURE;
         }
     }
-    char buffer[argc - 2][30];
-    char *new_argv[argc];
+    char buffer[fd_count][30];
+    char *new_argv[fd_count + 3];
     new_argv[0] = prog_name;
-    for (int i = 0; i < argc - 2; ++i) {
-        new_argv[i + 1] = buffer[i];
-        sprintf(new_argv[i + 1], "%d", fd[i]);
+    new_argv[1] = delimeter;
+    for (int i = 0; i < fd_count; ++i) {
+        char * buf = new_argv[i + 2] = buffer[i];
+        sprintf(buf, "%d", fd[i]);
     }
-    new_argv[argc - 1] = 0;
+    new_argv[fd_count + 2] = 0;
 
     char *envp[1];
     envp[0] = 0;
@@ -35,7 +40,7 @@ int main(int argc, char **argv) {
     if (pid == 0) {
         int ret = execve(prog_name, new_argv, envp);
         if (ret == -1) {
-            char err[255];
+            char err[255 + PATH_MAX];
             sprintf(err, "Executing %s", prog_name);
             perror(err);
             return EXIT_FAILURE;
@@ -47,15 +52,15 @@ int main(int argc, char **argv) {
         int status = 0;
         pid_t ret = waitpid(pid, &status, 0);
         if (ret == -1) {
-            char err[255];
+            char err[255 + PATH_MAX];
             sprintf(err, "Waiting for pid %d", pid);
             perror(err);
             return EXIT_FAILURE;
         }
-        for (int i = 0; i < argc - 2; ++i) {
+        for (int i = 0; i < fd_count; ++i) {
             int ret2 = close(fd[i]);
             if (ret2 == -1) {
-                char err[255];
+                char err[255 + PATH_MAX];
                 sprintf(err, "Closing fd #%d", i+1);
                 perror(err);
                 return EXIT_FAILURE;
