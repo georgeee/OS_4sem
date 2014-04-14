@@ -128,35 +128,60 @@ int buf_print_reversed(char ** mmap_buffers, int * mmap_buffer_count, int *caret
     return EXIT_SUCCESS;
 }
 
-int process_fd_impl(int fd_id, int fd, char ** mmap_buffers, int * mmap_buffer_count, int PAGE_SIZE){
+int process_fd_impl(int fd_id, int fd, char ** mmap_buffers, int * mmap_buffer_count, char ** mmap_buffers2, int * mmap_buffer_count2, int PAGE_SIZE){
     char buf[BUFFER_SIZE];
     int caret = 0, buff_id = 0;
+    int caret2 = 0, buff_id2 = 0;
     int ret, ret2;
+    int buff1_is_used = 0;
+    char newline_char = '\n';
     int i, j;
+    /*int lnc = 0;*/
     do{
         ret = read_impl(fd, buf, BUFFER_SIZE, read_from_input_fd_err_handler, &fd_id);
+        if(ret == 0) break;
         if(ret < 0) return EXIT_FAILURE;
         for(i = 0; i < ret; ++i){
             if(buf[i] == '\n'){
-                if(i > 0){
-                    reverse_char_array(buf, i);
-                    ret2 = write_impl(STDOUT_FILENO, buf, i, 0, write_to_stdout_err_handler, NULL);
+                /*printf("line #%d found\n", lnc++);*/
+                if(buff1_is_used){
+                    ret2 = bufcpy(buf, i, mmap_buffers2, mmap_buffer_count2, &caret2, &buff_id2, PAGE_SIZE); 
+                    if(ret2 != EXIT_SUCCESS) return ret2;
+
+                    ret2 = buf_print_reversed(mmap_buffers2, mmap_buffer_count2, &caret2, &buff_id2, PAGE_SIZE);
+                    if(ret2 != EXIT_SUCCESS) return ret2;
+                    //Print \n
+                    ret2 = write_impl(STDOUT_FILENO, &newline_char, 1, 0, write_to_stdout_err_handler, NULL);
                     if(ret2 < 0) return EXIT_FAILURE;
+
                     ret2 = buf_print_reversed(mmap_buffers, mmap_buffer_count, &caret, &buff_id, PAGE_SIZE);
                     if(ret2 != EXIT_SUCCESS) return ret2;
-                }
-                //Print \n
-                ret2 = write_impl(STDOUT_FILENO, buf + i, 1, 0, write_to_stdout_err_handler, NULL);
-                if(ret2 < 0) return EXIT_FAILURE;
+                    //Print \n
+                    ret2 = write_impl(STDOUT_FILENO, &newline_char, 1, 0, write_to_stdout_err_handler, NULL);
+                    if(ret2 < 0) return EXIT_FAILURE;
 
+                    buff1_is_used = 0;
+                }else{
+                    ret2 = bufcpy(buf, i, mmap_buffers, mmap_buffer_count, &caret, &buff_id, PAGE_SIZE); 
+                    if(ret2 != EXIT_SUCCESS) return ret2;
+                    buff1_is_used = 1;
+                }
                 for(j = 0; i + j + 1 < ret; ++j) buf[j] = buf[i + j + 1];
                 ret = j;
                 i = 0;
             }
         }
-        ret2 = bufcpy(buf, ret, mmap_buffers, mmap_buffer_count, &caret, &buff_id, PAGE_SIZE); 
+        if(buff1_is_used) ret2 = bufcpy(buf, ret, mmap_buffers2, mmap_buffer_count2, &caret2, &buff_id2, PAGE_SIZE); 
+        else ret2 = bufcpy(buf, ret, mmap_buffers, mmap_buffer_count, &caret, &buff_id, PAGE_SIZE); 
         if(ret2 != EXIT_SUCCESS) return ret2;
-    }while(ret != 0);
+    }while(1);
+    if(buff1_is_used){ 
+        ret2 = buf_print_reversed(mmap_buffers2, mmap_buffer_count2, &caret2, &buff_id2, PAGE_SIZE);
+        if(ret2 != EXIT_SUCCESS) return ret2;
+        //Print \n
+        ret2 = write_impl(STDOUT_FILENO, &newline_char, 1, 0, write_to_stdout_err_handler, NULL);
+        if(ret2 < 0) return EXIT_FAILURE;
+    }
     ret2 = buf_print_reversed(mmap_buffers, mmap_buffer_count, &caret, &buff_id, PAGE_SIZE);
     if(ret2 != EXIT_SUCCESS) return ret2;
     return EXIT_SUCCESS;
@@ -165,11 +190,15 @@ int process_fd_impl(int fd_id, int fd, char ** mmap_buffers, int * mmap_buffer_c
 int process_fd(int i, int fd, char * postfix, int postfix_len, int PAGE_SIZE){
     char * mmap_buffers[MMAP_BUFFERS_SIZE];
     int mmap_buffer_count = 1;
+    char * mmap_buffers2[MMAP_BUFFERS_SIZE];
+    int mmap_buffer_count2 = 1;
     int ret;
     char line_buffer[PAGE_SIZE];
+    char line_buffer2[PAGE_SIZE];
     mmap_buffers[0] = &line_buffer[0];
+    mmap_buffers2[0] = &line_buffer2[0];
 
-    int return_value = process_fd_impl(i, fd, mmap_buffers, &mmap_buffer_count, PAGE_SIZE);
+    int return_value = process_fd_impl(i, fd, mmap_buffers, &mmap_buffer_count, mmap_buffers2, &mmap_buffer_count2, PAGE_SIZE);
 
     if(return_value == EXIT_SUCCESS && postfix_len > 0){
         ret = write_impl(STDOUT_FILENO, postfix, postfix_len, 0, write_to_stdout_err_handler, 0);
@@ -180,6 +209,17 @@ int process_fd(int i, int fd, char * postfix, int postfix_len, int PAGE_SIZE){
         int i;
         for(i = 1; i < mmap_buffer_count; ++i){
             ret = raw_deallocate(mmap_buffers[i], PAGE_SIZE << i);
+            if(ret < 0){
+                perror("Failed to deallocate line buffer memory");
+                return_value = EXIT_FAILURE;
+                break;
+            }
+        }
+    }
+    if(mmap_buffer_count2 > 1){
+        int i;
+        for(i = 1; i < mmap_buffer_count2; ++i){
+            ret = raw_deallocate(mmap_buffers2[i], PAGE_SIZE << i);
             if(ret < 0){
                 perror("Failed to deallocate line buffer memory");
                 return_value = EXIT_FAILURE;
