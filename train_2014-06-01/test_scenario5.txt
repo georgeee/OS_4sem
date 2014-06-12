@@ -1,0 +1,4 @@
+grep .c
+
+abc
+main.c

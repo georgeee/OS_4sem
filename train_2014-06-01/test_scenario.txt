@@ -1,0 +1,3 @@
+grep .c
+-> ls
+<- tee out.txt
